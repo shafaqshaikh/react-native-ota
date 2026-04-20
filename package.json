@@ -1,5 +1,5 @@
 {
-  "name": "react-native-ota-updates",
+  "name": "@shafaqshaikh/react-native-ota-updates",
   "version": "0.1.0",
   "description": "Self-hosted OTA updates for React Native — MongoDB + any S3-compatible storage (R2, S3, MinIO). Multi-tenant, staged rollouts, crash-loop rollback, same-launch delivery.",
   "main": "lib/index.js",
@@ -80,6 +80,7 @@
     "node": ">=18"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
   }
 }

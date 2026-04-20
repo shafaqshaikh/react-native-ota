@@ -2,7 +2,7 @@
 
 **Self-hosted over-the-air updates for React Native.** MongoDB for metadata, any S3-compatible bucket (Cloudflare R2, AWS S3, Backblaze, Wasabi, MinIO) for bundles. Multi-tenant, staged rollouts, crash-loop rollback, and **same-launch delivery** — the OTA bundle downloads, extracts, and loads before the splash screen is gone.
 
-Designed as a drop-in, cheaper, fully self-hosted alternative to Expo EAS Update and the deprecated App Center CodePush. At 1M MAU on Cloudflare R2 it costs **~$177/month** vs ~$999/month on Expo EAS.
+alsoDesigned as a drop-in, fully self-hosted alternative to Expo EAS Update and the deprecated App Center CodePush.
 
 ---
 
@@ -155,21 +155,6 @@ docker compose up -d
 Open `http://localhost:4000/admin` (user `admin` / password from your `.env`) to create your first project and mint an API key.
 
 ---
-
-## Cost at scale
-
-For 500k MAU × 3 OTAs/week × ~25 MB per OTA:
-
-| Component | Cost |
-|---|---|
-| R2 bandwidth (162 TB/mo egress) | **$0** |
-| R2 class B reads (13M ops) | $4.68 |
-| R2 storage (~4 GB) | $0.06 |
-| MongoDB Atlas M10 | $57 |
-| Compute (Fly.io 2× shared-cpu-1x) | ~$10 |
-| **Total** | **≈ $73/month** |
-
-Compare to Expo EAS Update at ~$999/month for 1M MAU — self-hosted on this stack is ~**14× cheaper**.
 
 ## Security
 

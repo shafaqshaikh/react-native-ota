@@ -15,6 +15,12 @@ let config: OTAConfig = {
   runtimeVersion: '1.0.0',
 };
 
+/** If the manifest URL is absolute (http(s)://), use as-is — S3/R2 URLs are direct. */
+function absoluteUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${config.serverUrl}${url}`;
+}
+
 function log(...args: unknown[]) {
   if (config.debug) console.log('[OTA]', ...args);
 }
@@ -62,8 +68,12 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
     clientId: config.clientId || '',
     platform: Platform.OS,
   });
+  if (config.projectId) params.set('projectId', config.projectId);
+  if (config.channel) params.set('channel', config.channel);
 
-  const url = `${config.serverUrl}/check?${params}`;
+  // Prefer v1 if projectId is set; fall back to legacy path otherwise.
+  const endpoint = config.projectId ? '/v1/check' : '/check';
+  const url = `${config.serverUrl}${endpoint}?${params}`;
   log('Checking', url);
 
   const controller = new AbortController();
@@ -83,6 +93,7 @@ export async function checkForUpdate(): Promise<UpdateCheckResult> {
 // ------------------------------------------------------------------
 
 export async function downloadUpdate(
+
   update: UpdateCheckResult,
 ): Promise<DownloadResult> {
   if (!update.available || !update.updateId) {
@@ -96,21 +107,17 @@ export async function downloadUpdate(
   try {
     // 1 — Manifest
     log('Downloading manifest…');
-    const manifestRes = await fetch(`${config.serverUrl}${manifestUrl}`);
+    const manifestRes = await fetch(absoluteUrl(manifestUrl!));
     if (!manifestRes.ok) throw new Error(`Manifest fetch failed: ${manifestRes.status}`);
     const manifest: UpdateManifest = await manifestRes.json();
     await Native.writeFile(`${dir}/manifest.json`, JSON.stringify(manifest, null, 2));
 
-    // 2 — Bundle → temp file
+    // 2 — Bundle → temp file (native download, no JS base64 roundtrip)
     log('Downloading bundle…');
-    const bundleRes = await fetch(`${config.serverUrl}${manifest.bundleUrl}`);
-    if (!bundleRes.ok) throw new Error(`Bundle fetch failed: ${bundleRes.status}`);
-
-    const buf = await bundleRes.arrayBuffer();
-    const b64 = arrayBufferToBase64(buf);
-    const tmp = `${dir}/bundle.js.tmp`;
-    const final = `${dir}/bundle.js`;
-    await Native.writeFile(tmp, b64, 'base64');
+    const bundleUrl = absoluteUrl(manifest.bundleUrl);
+    const tmp = `${dir}/bundle.hbc.tmp`;
+    const final = `${dir}/bundle.hbc`;
+    await Native.downloadFile(bundleUrl, tmp);
 
     // 3 — SHA-256 verification
     log('Verifying hash…');
@@ -124,6 +131,27 @@ export async function downloadUpdate(
 
     // 4 — Atomic rename
     await Native.moveFile(tmp, final);
+
+    // 5 — Download+extract the single assets zip (Android). One HTTP GET
+    // beats hundreds of individual asset GETs. iOS manifests omit this
+    // field and keep the native symlink-to-main-bundle trick.
+    if (manifest.assetsZipUrl) {
+      log('Downloading assets zip…');
+      const zipPath = `${dir}/assets.zip`;
+      await Native.downloadFile(absoluteUrl(manifest.assetsZipUrl), zipPath);
+      if (manifest.assetsZipHash) {
+        const actualZipHash = await Native.sha256File(zipPath);
+        if (actualZipHash !== manifest.assetsZipHash) {
+          throw new Error(
+            `Assets zip integrity check failed.\n` +
+            `  Expected: ${manifest.assetsZipHash}\n  Got:      ${actualZipHash}`,
+          );
+        }
+      }
+      await Native.unzipFile(zipPath, dir);
+      await Native.deleteFile(zipPath).catch(() => {});
+    }
+
     log('Download complete', updateId);
 
     return { updateId, bundlePath: final, manifest };
@@ -150,6 +178,7 @@ export async function applyUpdate(result: DownloadResult): Promise<void> {
     status: 'pending',
     appVersion: manifest.appVersion,
     runtimeVersion: manifest.runtimeVersion,
+
     bundleHash: manifest.bundleHash,
     appliedAt: Date.now(),
   });
@@ -162,6 +191,15 @@ export async function applyUpdate(result: DownloadResult): Promise<void> {
   const keep = [updateId];
   if (prev?.updateId) keep.push(prev.updateId);
   await Storage.cleanup(keep);
+}
+
+// ------------------------------------------------------------------
+// Reload (apply downloaded update immediately, like Updates.reloadAsync)
+// ------------------------------------------------------------------
+
+export async function reloadAsync(): Promise<void> {
+  log('Reloading bridge to apply OTA bundle…');
+  await Native.reload();
 }
 
 // ------------------------------------------------------------------
@@ -210,9 +248,3 @@ export async function getCurrentVersion(): Promise<VersionInfo> {
 // Helpers
 // ------------------------------------------------------------------
 
-function arrayBufferToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return globalThis.btoa(bin);
-}

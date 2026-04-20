@@ -1,11 +1,15 @@
+node_modules/
+lib/
+*.tsbuildinfo
+.DS_Store
+server/data/
+server/uploads/
 /tmp
-/out-tsc
-
-/node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-/.pnp
-.pnp.js
-
-.vscode/*
+# Added by code-review-graph
+.code-review-graph/
+.mcp.json
+.claude/
+CLAUDE.md

@@ -1,6 +1,10 @@
 export interface OTAConfig {
   /** URL of your OTA update server */
   serverUrl: string;
+  /** Project slug, registered via /admin on the server */
+  projectId?: string;
+  /** Release channel (default: "production") */
+  channel?: string;
   /** Current app version (e.g. "1.4.9") */
   appVersion: string;
   /** Runtime version — updates only apply if this matches */
@@ -35,6 +39,10 @@ export interface UpdateManifest {
   runtimeVersion: string;
   bundleHash: string;
   bundleUrl: string;
+  /** URL to a single zip of all assets (Android only). iOS uses a symlink trick instead. */
+  assetsZipUrl?: string | null;
+  /** SHA-256 hash of the zip for integrity verification. */
+  assetsZipHash?: string | null;
   assets: AssetEntry[];
   createdAt: number;
 }

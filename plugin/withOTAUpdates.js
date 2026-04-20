@@ -16,10 +16,44 @@
 const {
   withMainApplication,
   withAppDelegate,
+  withInfoPlist,
+  withAndroidManifest,
+  AndroidConfig,
   createRunOncePlugin,
 } = require('@expo/config-plugins');
 
 const pkg = require('../package.json');
+
+function withOTAUpdatesInfoPlist(config, props) {
+  return withInfoPlist(config, (cfg) => {
+    if (props?.serverUrl) cfg.modResults.OTAUpdatesServerUrl = props.serverUrl;
+    if (props?.projectId) cfg.modResults.OTAUpdatesProjectId = props.projectId;
+    if (props?.channel) cfg.modResults.OTAUpdatesChannel = props.channel;
+    if (props?.launchTimeoutMs != null) {
+      cfg.modResults.OTAUpdatesLaunchTimeoutMs = props.launchTimeoutMs;
+    }
+    return cfg;
+  });
+}
+
+function withOTAUpdatesAndroidManifest(config, props) {
+  return withAndroidManifest(config, (cfg) => {
+    const application = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults);
+    if (props?.serverUrl) {
+      AndroidConfig.Manifest.addMetaDataItemToMainApplication(
+        application, 'OTAUpdatesServerUrl', props.serverUrl);
+    }
+    if (props?.projectId) {
+      AndroidConfig.Manifest.addMetaDataItemToMainApplication(
+        application, 'OTAUpdatesProjectId', props.projectId);
+    }
+    if (props?.channel) {
+      AndroidConfig.Manifest.addMetaDataItemToMainApplication(
+        application, 'OTAUpdatesChannel', props.channel);
+    }
+    return cfg;
+  });
+}
 
 function withOTAUpdatesAndroid(config) {
   return withMainApplication(config, (cfg) => {
@@ -118,9 +152,11 @@ function withOTAUpdatesIOS(config) {
   });
 }
 
-function withOTAUpdates(config, _props) {
+function withOTAUpdates(config, props) {
   config = withOTAUpdatesAndroid(config);
   config = withOTAUpdatesIOS(config);
+  config = withOTAUpdatesInfoPlist(config, props || {});
+  config = withOTAUpdatesAndroidManifest(config, props || {});
   return config;
 }
 

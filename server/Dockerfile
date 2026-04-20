@@ -1,10 +1,20 @@
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install --production --no-audit --no-fund
+
 FROM node:20-alpine
 WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
-RUN npm install --omit=dev
-COPY server/ ./server/
-ENV PORT=4000
-ENV OTA_DATA_DIR=/app/data
-ENV OTA_UPLOADS_DIR=/app/uploads
+COPY src ./src
+
+RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
+USER app
+
 EXPOSE 4000
-CMD ["node", "server/src/index.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:4000/health || exit 1
+
+CMD ["node", "src/index.js"]

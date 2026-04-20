@@ -1,0 +1,82 @@
+# Docker Compose for self-hosting react-native-ota-updates server.
+#
+# This runs three services:
+#   - server : the Express API + admin dashboard
+#   - mongo  : MongoDB for metadata storage
+#   - minio  : S3-compatible object storage for bundles
+#
+# To use Cloudflare R2 / AWS S3 / Backblaze instead of MinIO, remove the
+# `minio` service and the `depends_on`/env vars pointing to it, and fill
+# in S3_ENDPOINT / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY / S3_PUBLIC_BASE_URL.
+
+services:
+  server:
+    build: .
+    image: react-native-ota-updates-server:latest
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      MONGO_URL: mongodb://mongo:27017/ota-updates
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: ota-bundles
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_FORCE_PATH_STYLE: "true"
+      S3_PUBLIC_BASE_URL: http://localhost:9000/ota-bundles
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot init job that creates the bucket on first run.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      (mc mb --ignore-existing local/ota-bundles) &&
+      mc anonymous set download local/ota-bundles;
+      "
+
+volumes:
+  mongo-data:
+  minio-data:

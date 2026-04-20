@@ -32,6 +32,9 @@ export const Native = {
   confirmLaunchSuccess: (): Promise<boolean> =>
     OTAUpdatesModule.confirmLaunchSuccess(),
 
+  reload: (): Promise<boolean> =>
+    OTAUpdatesModule.reload(),
+
   mkdir: (path: string): Promise<boolean> =>
     OTAUpdatesModule.mkdir(path),
 
@@ -55,4 +58,12 @@ export const Native = {
 
   sha256File: (path: string): Promise<string> =>
     OTAUpdatesModule.sha256File(path),
+
+  downloadFile: (url: string, dest: string): Promise<string> =>
+    OTAUpdatesModule.downloadFile(url, dest),
+
+  unzipFile: (zipPath: string, destDir: string): Promise<boolean> =>
+    OTAUpdatesModule.unzipFile
+      ? OTAUpdatesModule.unzipFile(zipPath, destDir)
+      : Promise.reject(new Error('unzipFile not implemented on this platform')),
 };

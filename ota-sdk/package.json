@@ -1,0 +1,10 @@
+{
+  "name": "react-native-ota-sdk",
+  "version": "1.0.0",
+  "description": "React Native OTA SDK",
+  "main": "src/index.js",
+  "scripts": {},
+  "peerDependencies": {
+    "react-native": ">=0.60.0"
+  }
+}

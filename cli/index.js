@@ -24,7 +24,8 @@ function loadConfig() {
     const raw = typeof appConfig === 'function' ? appConfig() : appConfig;
     const cfg = raw.expo || raw;
     const plugin = (cfg.plugins || []).find(p =>
-      Array.isArray(p) && p[0] === 'react-native-ota-updates'
+      Array.isArray(p) && typeof p[0] === 'string' &&
+      (p[0] === 'react-native-ota-updates' || p[0].endsWith('/react-native-ota-updates'))
     );
     if (plugin && plugin[1]) {
       const p = plugin[1];
@@ -35,7 +36,8 @@ function loadConfig() {
     const appJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'app.json'), 'utf8'));
     const expo = appJson.expo || appJson;
     const plugin = (expo.plugins || []).find(p =>
-      Array.isArray(p) && p[0] === 'react-native-ota-updates'
+      Array.isArray(p) && typeof p[0] === 'string' &&
+      (p[0] === 'react-native-ota-updates' || p[0].endsWith('/react-native-ota-updates'))
     );
     if (plugin && plugin[1]) {
       const p = plugin[1];

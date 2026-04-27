@@ -4,6 +4,20 @@ const rollout = require('../services/rollout');
 
 const router = express.Router();
 
+// Per-worker in-memory cache of project-by-slug lookups. Projects rarely
+// change and /v1/check fires once per app launch per device, so re-reading
+// the same slug on every request dominates Mongo load at high RPS.
+const PROJECT_CACHE_TTL_MS = 60_000;
+const projectCache = new Map();
+
+async function getProjectBySlug(slug) {
+  const cached = projectCache.get(slug);
+  if (cached && cached.expiresAt > Date.now()) return cached.project;
+  const project = await Project.findOne({ slug }).lean();
+  projectCache.set(slug, { project, expiresAt: Date.now() + PROJECT_CACHE_TTL_MS });
+  return project;
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const {
@@ -25,7 +39,7 @@ router.get('/', async (req, res, next) => {
       return res.status(400).json({ error: 'platform must be ios or android' });
     }
 
-    const project = await Project.findOne({ slug: projectSlug }).lean();
+    const project = await getProjectBySlug(projectSlug);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const updates = await Update.find({

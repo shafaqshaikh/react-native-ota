@@ -52,6 +52,7 @@ updateSchema.index({
   appVersion: 1,
   runtimeVersion: 1,
   channel: 1,
+  status: 1,
   createdAt: -1,
 });
 

@@ -132,10 +132,10 @@ export async function downloadUpdate(
     if (deltaApplicable) {
       log('Attempting delta patch…');
       try {
-        await applyDelta(current!.bundlePath, manifest, dir, finalBundle);
+        await applyDelta(current!.bundlePath, manifest, dir, finalBundle, bundleHash!);
         log('Delta patch applied successfully');
       } catch (deltaErr) {
-        log('Delta patch failed, falling back to full download:', deltaErr);
+        warn('Delta patch failed, falling back to full download:', deltaErr);
         await fullBundleDownload(manifest, dir, finalBundle, bundleHash!);
       }
     } else {
@@ -268,30 +268,37 @@ async function applyDelta(
   manifest: UpdateManifest,
   dir: string,
   finalBundle: string,
+  expectedBundleHash: string,
 ): Promise<void> {
   const patchPath = `${dir}/bundle.patch`;
   const tmpOut = `${finalBundle}.tmp`;
 
-  await Native.downloadFile(absoluteUrl(manifest.diffUrl!), patchPath);
+  try {
+    await Native.downloadFile(absoluteUrl(manifest.diffUrl!), patchPath);
 
-  const actualPatchHash = await Native.sha256File(patchPath);
-  if (actualPatchHash !== manifest.diffHash) {
-    throw new Error(
-      `Patch hash mismatch (expected ${manifest.diffHash}, got ${actualPatchHash})`,
-    );
+    const actualPatchHash = await Native.sha256File(patchPath);
+    if (actualPatchHash !== manifest.diffHash) {
+      throw new Error(
+        `Patch hash mismatch (expected ${manifest.diffHash}, got ${actualPatchHash})`,
+      );
+    }
+
+    await Native.applyPatch(basePath, patchPath, tmpOut);
+
+    const actualOut = await Native.sha256File(tmpOut);
+    if (actualOut !== expectedBundleHash) {
+      throw new Error(
+        `Reconstructed bundle hash mismatch (expected ${expectedBundleHash}, got ${actualOut})`,
+      );
+    }
+
+    await Native.moveFile(tmpOut, finalBundle);
+  } finally {
+    // Always cleanup scratch files, regardless of success or failure path.
+    // After successful moveFile, tmpOut no longer exists — deleteFile is a no-op.
+    await Native.deleteFile(patchPath).catch(() => {});
+    await Native.deleteFile(tmpOut).catch(() => {});
   }
-
-  await Native.applyPatch(basePath, patchPath, tmpOut);
-
-  const actualOut = await Native.sha256File(tmpOut);
-  if (actualOut !== manifest.bundleHash) {
-    throw new Error(
-      `Reconstructed bundle hash mismatch (expected ${manifest.bundleHash}, got ${actualOut})`,
-    );
-  }
-
-  await Native.moveFile(tmpOut, finalBundle);
-  await Native.deleteFile(patchPath).catch(() => {});
 }
 
 /**

@@ -5,9 +5,9 @@ const mongoose = require('mongoose');
 
 const config = require('../config');
 const s3 = require('../storage/s3');
-const { Update, AuditLog, UpdateDiff } = require('../db/mongo');
+const { Update, AuditLog, UpdateDiff, Project } = require('../db/mongo');
 const diffService = require('../services/diff');
-const { requireApiKey } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({
@@ -20,7 +20,7 @@ const publishUpload = upload.fields([
   { name: 'assetsZip', maxCount: 1 },
 ]);
 
-router.post('/', requireApiKey, publishUpload, async (req, res, next) => {
+router.post('/', requireAuth, publishUpload, async (req, res, next) => {
   try {
     const {
       appVersion,
@@ -33,6 +33,17 @@ router.post('/', requireApiKey, publishUpload, async (req, res, next) => {
       channel,
       label,
     } = req.body;
+
+    // Resolve req.project: API-key path already populated it; session path uses projectSlug.
+    if (!req.project) {
+      const slug = (req.body.projectSlug || '').trim();
+      if (!slug) {
+        return res.status(400).json({ error: 'projectSlug required when authenticated via session' });
+      }
+      const project = await Project.findOne({ slug }).lean();
+      if (!project) return res.status(404).json({ error: 'project not found' });
+      req.project = project;
+    }
 
     const bundleFile = req.files && req.files.bundle && req.files.bundle[0];
     const assetsZipFile = req.files && req.files.assetsZip && req.files.assetsZip[0];
@@ -117,7 +128,7 @@ router.post('/', requireApiKey, publishUpload, async (req, res, next) => {
     AuditLog.create({
       projectId: req.project._id,
       type: 'publish',
-      actor: req.apiKey.name || 'api',
+      actor: req.user ? `user:${req.user.email}` : `apikey:${req.apiKey._id}`,
       payload: {
         updateId: update._id.toString(),
         platform,

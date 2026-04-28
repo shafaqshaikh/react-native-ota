@@ -5,7 +5,8 @@ const mongoose = require('mongoose');
 
 const config = require('../config');
 const s3 = require('../storage/s3');
-const { Update, AuditLog } = require('../db/mongo');
+const { Update, AuditLog, UpdateDiff } = require('../db/mongo');
+const diffService = require('../services/diff');
 const { requireApiKey } = require('../middleware/auth');
 
 const router = express.Router();
@@ -127,6 +128,40 @@ router.post('/', requireApiKey, publishUpload, async (req, res, next) => {
         assetsZipSize: update.assetsZipSize,
       },
     }).catch(() => {});
+
+    // Generate binary diff against the previous active bundle (best-effort).
+    // Failures here are logged but do not fail the publish — devices fall
+    // back to full-bundle download via the existing /v1/manifest path.
+    try {
+      const baseUpdate = await Update.findOne({
+        projectId: req.project._id,
+        platform,
+        appVersion,
+        runtimeVersion,
+        channel: update.channel,
+        status: 'active',
+        _id: { $ne: update._id },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (baseUpdate) {
+        console.log(`[OTA] Generating diff (${baseUpdate._id} -> ${update._id})...`);
+        const diffDoc = await diffService.generate({
+          baseUpdate,
+          newUpdate: update,
+          newBundleBuffer: bundleFile.buffer,
+          projectSlug: req.project.slug,
+        });
+        if (diffDoc) {
+          console.log(`[OTA] Diff generated (${diffDoc.patchSize} bytes)`);
+        } else {
+          console.log('[OTA] Diff skipped (size guard tripped)');
+        }
+      }
+    } catch (err) {
+      console.error('[OTA] Diff generation failed (non-fatal):', err.message);
+    }
 
     console.log(`[OTA] Published ${update._id} (${platform} ${appVersion}) project=${req.project.slug}`);
 

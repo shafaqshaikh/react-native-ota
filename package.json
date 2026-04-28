@@ -1,6 +1,6 @@
 {
   "name": "@shafaqshaikh/react-native-ota-updates",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Self-hosted OTA updates for React Native — MongoDB + any S3-compatible storage (R2, S3, MinIO). Multi-tenant, staged rollouts, crash-loop rollback, same-launch delivery.",
   "main": "lib/index.js",
   "module": "lib/index.js",

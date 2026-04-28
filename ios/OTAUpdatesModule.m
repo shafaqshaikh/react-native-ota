@@ -419,18 +419,20 @@ RCT_EXPORT_METHOD(applyPatch:(NSString *)basePath
                     resolver:(RCTPromiseResolveBlock)resolve
                     rejecter:(RCTPromiseRejectBlock)reject)
 {
-    NSError *error = nil;
-    BOOL ok = [OTABsPatch applyPatchAtBase:basePath
-                                     patch:patchPath
-                                    output:outPath
-                                     error:&error];
-    if (ok) {
-        resolve(nil);
-    } else {
-        reject(@"PATCH_FAILED",
-               error.localizedDescription ?: @"bspatch failed",
-               error);
-    }
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSError *error = nil;
+        BOOL ok = [OTABsPatch applyPatchAtBase:basePath
+                                         patch:patchPath
+                                        output:outPath
+                                         error:&error];
+        if (ok) {
+            resolve(@YES);
+        } else {
+            reject(@"PATCH_FAILED",
+                   error.localizedDescription ?: @"bspatch failed",
+                   error);
+        }
+    });
 }
 
 // ── Constants ────────────────────────────────────────────────────

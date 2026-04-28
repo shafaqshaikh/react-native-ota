@@ -5,6 +5,8 @@
 #import <stdio.h>
 #import <string.h>
 
+static NSString * const kOTABsPatchErrorDomain = @"OTABsPatch";
+
 typedef struct {
     BZFILE* bz;
     FILE* fp;
@@ -25,16 +27,19 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
                    patch:(NSString *)patchPath
                   output:(NSString *)outPath
                    error:(NSError **)error {
-    NSData* baseData = [NSData dataWithContentsOfFile:basePath];
+    NSError* mapErr = nil;
+    NSData* baseData = [NSData dataWithContentsOfFile:basePath
+                                              options:NSDataReadingMappedAlways
+                                                error:&mapErr];
     if (!baseData) {
-        if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:1
+        if (error) *error = mapErr ?: [NSError errorWithDomain:kOTABsPatchErrorDomain code:1
             userInfo:@{NSLocalizedDescriptionKey: @"Cannot read base bundle"}];
         return NO;
     }
 
     FILE* pf = fopen([patchPath UTF8String], "rb");
     if (!pf) {
-        if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:2
+        if (error) *error = [NSError errorWithDomain:kOTABsPatchErrorDomain code:2
             userInfo:@{NSLocalizedDescriptionKey: @"Cannot open patch file"}];
         return NO;
     }
@@ -42,13 +47,13 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
     uint8_t header[24];
     if (fread(header, 1, 24, pf) != 24) {
         fclose(pf);
-        if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:3
+        if (error) *error = [NSError errorWithDomain:kOTABsPatchErrorDomain code:3
             userInfo:@{NSLocalizedDescriptionKey: @"Short patch header"}];
         return NO;
     }
     if (memcmp(header, "ENDSLEY/BSDIFF43", 16) != 0) {
         fclose(pf);
-        if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:4
+        if (error) *error = [NSError errorWithDomain:kOTABsPatchErrorDomain code:4
             userInfo:@{NSLocalizedDescriptionKey: @"Bad patch magic"}];
         return NO;
     }
@@ -57,7 +62,7 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
     for (int i = 0; i < 8; i++) newsize |= ((int64_t)header[16 + i]) << (i * 8);
     if (newsize < 0) {
         fclose(pf);
-        if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:5
+        if (error) *error = [NSError errorWithDomain:kOTABsPatchErrorDomain code:5
             userInfo:@{NSLocalizedDescriptionKey: @"Negative new size"}];
         return NO;
     }
@@ -66,7 +71,7 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
     BZFILE* bz = BZ2_bzReadOpen(&bzerror, pf, 0, 0, NULL, 0);
     if (bzerror != BZ_OK) {
         fclose(pf);
-        if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:6
+        if (error) *error = [NSError errorWithDomain:kOTABsPatchErrorDomain code:6
             userInfo:@{NSLocalizedDescriptionKey: @"bzReadOpen failed"}];
         return NO;
     }
@@ -82,7 +87,7 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
     fclose(pf);
 
     if (rc != 0) {
-        if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:7
+        if (error) *error = [NSError errorWithDomain:kOTABsPatchErrorDomain code:7
             userInfo:@{NSLocalizedDescriptionKey: @"bspatch returned non-zero"}];
         return NO;
     }

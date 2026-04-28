@@ -114,4 +114,10 @@ program
     console.log();
   });
 
+program
+  .command('login')
+  .description('Log in interactively with email + password')
+  .option('-s, --server <url>', 'OTA server URL')
+  .action(require('./login').login);
+
 program.parse();

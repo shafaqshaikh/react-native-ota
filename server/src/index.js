@@ -11,6 +11,7 @@ const checkRoutes = require('./routes/check');
 const manifestRoutes = require('./routes/manifest');
 const publishRoutes = require('./routes/publish');
 const adminRoutes = require('./routes/admin');
+const authRoutes = require('./routes/auth');
 
 const USE_CLUSTER =
   process.env.CLUSTER === '1' ||
@@ -65,6 +66,8 @@ function runWorker() {
   app.use('/v1/check', checkRoutes);
   app.use('/v1/manifest', manifestRoutes);
   app.use('/v1/publish', publishRoutes);
+  app.use('/v1', authRoutes);
+  app.use('/', authRoutes);
 
   // ── Legacy aliases (for backwards compat with older clients) ─────
   app.use('/check', checkRoutes);

@@ -120,4 +120,14 @@ program
   .option('-s, --server <url>', 'OTA server URL')
   .action(require('./login').login);
 
+program
+  .command('logout')
+  .description('Log out and remove the local credentials file')
+  .action(require('./logout').logout);
+
+program
+  .command('whoami')
+  .description('Print the currently logged-in user')
+  .action(require('./whoami').whoami);
+
 program.parse();

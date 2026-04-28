@@ -81,10 +81,33 @@ updateDiffSchema.index(
   { unique: true },
 );
 
+// ── User (CLI-login email/password account) ───────────────────────
+const userSchema = new mongoose.Schema({
+  email:        { type: String, required: true, lowercase: true, trim: true },
+  passwordHash: { type: String, required: true },
+  name:         { type: String, default: '' },
+  createdAt:    { type: Date, default: Date.now },
+});
+userSchema.index({ email: 1 }, { unique: true });
+
+// ── Session (per-CLI-login bearer token) ──────────────────────────
+const sessionSchema = new mongoose.Schema({
+  userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  tokenHash:  { type: String, required: true },
+  expiresAt:  { type: Date, required: true },
+  createdAt:  { type: Date, default: Date.now },
+  lastUsedAt: { type: Date, default: Date.now },
+  userAgent:  { type: String, default: '' },
+});
+sessionSchema.index({ tokenHash: 1 });
+sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
 module.exports = {
   Project: mongoose.model('Project', projectSchema),
   ApiKey: mongoose.model('ApiKey', apiKeySchema),
   Update: mongoose.model('Update', updateSchema),
   AuditLog: mongoose.model('AuditLog', auditLogSchema),
   UpdateDiff: mongoose.model('UpdateDiff', updateDiffSchema),
+  User: mongoose.model('User', userSchema),
+  Session: mongoose.model('Session', sessionSchema),
 };

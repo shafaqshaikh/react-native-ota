@@ -65,9 +65,26 @@ const auditLogSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+// ── UpdateDiff (binary patch from one bundle to another) ──────────
+const updateDiffSchema = new mongoose.Schema({
+  toUpdateId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Update', required: true },
+  fromUpdateId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Update', required: true },
+  fromBundleHash: { type: String, required: true },
+  patchKey:       { type: String, required: true },
+  patchHash:      { type: String, required: true },
+  patchSize:      { type: Number, required: true },
+  createdAt:      { type: Date, default: Date.now },
+});
+
+updateDiffSchema.index(
+  { toUpdateId: 1, fromBundleHash: 1 },
+  { unique: true },
+);
+
 module.exports = {
   Project: mongoose.model('Project', projectSchema),
   ApiKey: mongoose.model('ApiKey', apiKeySchema),
   Update: mongoose.model('Update', updateSchema),
   AuditLog: mongoose.model('AuditLog', auditLogSchema),
+  UpdateDiff: mongoose.model('UpdateDiff', updateDiffSchema),
 };

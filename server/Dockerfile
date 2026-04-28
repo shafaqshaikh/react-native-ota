@@ -5,6 +5,7 @@ RUN npm install --production --no-audit --no-fund
 
 FROM node:20-alpine
 WORKDIR /app
+RUN apk add --no-cache bsdiff
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./

@@ -129,40 +129,6 @@ router.post('/', requireApiKey, publishUpload, async (req, res, next) => {
       },
     }).catch(() => {});
 
-    // Generate binary diff against the previous active bundle (best-effort).
-    // Failures here are logged but do not fail the publish — devices fall
-    // back to full-bundle download via the existing /v1/manifest path.
-    try {
-      const baseUpdate = await Update.findOne({
-        projectId: req.project._id,
-        platform,
-        appVersion,
-        runtimeVersion,
-        channel: update.channel,
-        status: 'active',
-        _id: { $ne: update._id },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-
-      if (baseUpdate) {
-        console.log(`[OTA] Generating diff (${baseUpdate._id} -> ${update._id})...`);
-        const diffDoc = await diffService.generate({
-          baseUpdate,
-          newUpdate: update,
-          newBundleBuffer: bundleFile.buffer,
-          projectSlug: req.project.slug,
-        });
-        if (diffDoc) {
-          console.log(`[OTA] Diff generated (${diffDoc.patchSize} bytes)`);
-        } else {
-          console.log('[OTA] Diff skipped (size guard tripped)');
-        }
-      }
-    } catch (err) {
-      console.error('[OTA] Diff generation failed (non-fatal):', err.message);
-    }
-
     console.log(`[OTA] Published ${update._id} (${platform} ${appVersion}) project=${req.project.slug}`);
 
     res.json({
@@ -172,6 +138,42 @@ router.post('/', requireApiKey, publishUpload, async (req, res, next) => {
       bundleUrl: s3.publicUrl(bundleKey),
       assetsZipUrl: assetsZipKey ? s3.publicUrl(assetsZipKey) : null,
     });
+
+    // Fire-and-forget: diff generation continues after the response is sent.
+    // Publishing CLI sees success the moment the Update doc lands; bsdiff runs
+    // in the background of this same Node process. Failures are logged.
+    (async () => {
+      try {
+        const baseUpdate = await Update.findOne({
+          projectId: req.project._id,
+          platform,
+          appVersion,
+          runtimeVersion,
+          channel: update.channel,
+          status: 'active',
+          _id: { $ne: update._id },
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+
+        if (!baseUpdate) return;
+
+        console.log(`[OTA] Generating diff (${baseUpdate._id.toString()} -> ${update._id.toString()})...`);
+        const diffDoc = await diffService.generate({
+          baseUpdate,
+          newUpdate: update,
+          newBundleBuffer: bundleFile.buffer,
+          projectSlug: req.project.slug,
+        });
+        if (diffDoc) {
+          console.log(`[OTA] Diff generated (${diffDoc.patchSize} bytes)`);
+        } else {
+          console.log('[OTA] Diff skipped (patch >= 60% of bundle)');
+        }
+      } catch (err) {
+        console.error('[OTA] Diff generation failed (non-fatal):', err);
+      }
+    })();
   } catch (err) {
     next(err);
   }

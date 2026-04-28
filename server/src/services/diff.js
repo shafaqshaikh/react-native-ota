@@ -58,8 +58,8 @@ async function generate({
   newUpdate,
   newBundleBuffer,
   projectSlug,
-  s3,
-  UpdateDiff,
+  s3 = require('../storage/s3'),
+  UpdateDiff = require('../db/mongo').UpdateDiff,
 }) {
   const oldBuf = await s3.downloadBuffer(baseUpdate.bundleKey);
   const patchBuf = await computePatch(oldBuf, newBundleBuffer);

@@ -10,7 +10,8 @@ Pod::Spec.new do |s|
   s.author       = "Your Name"
   s.platform     = :ios, "13.4"
   s.source       = { :git => "https://github.com/your-org/react-native-ota-updates.git", :tag => s.version }
-  s.source_files = "ios/**/*.{h,m,mm}"
+  s.source_files = "ios/**/*.{h,m,mm,c}"
+  s.libraries    = "bz2"
   s.frameworks   = "Security"
 
   install_modules_dependencies(s)

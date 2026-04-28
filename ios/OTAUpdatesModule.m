@@ -1,4 +1,5 @@
 #import "OTAUpdatesModule.h"
+#import "OTABsPatch.h"
 #import <React/RCTLog.h>
 #import <React/RCTReloadCommand.h>
 #import <CommonCrypto/CommonDigest.h>
@@ -408,6 +409,28 @@ RCT_EXPORT_METHOD(sha256File:(NSString *)p
   NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH*2];
   for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [hex appendFormat:@"%02x", h[i]];
   resolve(hex);
+}
+
+// ── Delta patch ──────────────────────────────────────────────────
+
+RCT_EXPORT_METHOD(applyPatch:(NSString *)basePath
+                       patch:(NSString *)patchPath
+                      output:(NSString *)outPath
+                    resolver:(RCTPromiseResolveBlock)resolve
+                    rejecter:(RCTPromiseRejectBlock)reject)
+{
+    NSError *error = nil;
+    BOOL ok = [OTABsPatch applyPatchAtBase:basePath
+                                     patch:patchPath
+                                    output:outPath
+                                     error:&error];
+    if (ok) {
+        resolve(nil);
+    } else {
+        reject(@"PATCH_FAILED",
+               error.localizedDescription ?: @"bspatch failed",
+               error);
+    }
 }
 
 // ── Constants ────────────────────────────────────────────────────

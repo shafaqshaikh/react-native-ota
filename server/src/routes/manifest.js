@@ -36,18 +36,18 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const fromHash = typeof req.query.from === 'string' ? req.query.from : null;
-    const cacheKey = `${id}|${fromHash || 'none'}`;
+    const cacheControl = fromHash
+      ? 'private, no-store'
+      : 'public, max-age=60, s-maxage=60';
 
-    const now = Date.now();
-    const cached = manifestCache.get(cacheKey);
-    if (cached && cached.expiresAt > now) {
-      // Only the no-diff path is CDN-cacheable; ?from= varies per device.
-      if (!fromHash) {
-        res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
-      } else {
-        res.setHeader('Cache-Control', 'private, no-store');
+    // Cache only the no-diff path. Per-device ?from= responses bypass the
+    // shared cache so they don't churn out the popular base-manifest entries.
+    if (!fromHash) {
+      const cached = manifestCache.get(id);
+      if (cached && cached.expiresAt > Date.now()) {
+        res.setHeader('Cache-Control', cacheControl);
+        return res.json(cached.body);
       }
-      return res.json(cached.body);
     }
 
     const update = await Update.findById(id).lean();
@@ -70,19 +70,15 @@ router.get('/:id', async (req, res, next) => {
           body.fromBundleHash = diff.fromBundleHash;
         }
       } catch (err) {
-        // Diff lookup error is non-fatal — fall back to full manifest.
-        console.error('[OTA] UpdateDiff lookup failed:', err.message);
+        console.error('[OTA] UpdateDiff lookup failed:', err);
       }
-    }
-
-    if (manifestCache.size >= MANIFEST_CACHE_MAX_ENTRIES) manifestCache.clear();
-    manifestCache.set(cacheKey, { body, expiresAt: now + MANIFEST_CACHE_TTL_MS });
-
-    if (!fromHash) {
-      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
     } else {
-      res.setHeader('Cache-Control', 'private, no-store');
+      // No-diff path is cacheable.
+      if (manifestCache.size >= MANIFEST_CACHE_MAX_ENTRIES) manifestCache.clear();
+      manifestCache.set(id, { body, expiresAt: Date.now() + MANIFEST_CACHE_TTL_MS });
     }
+
+    res.setHeader('Cache-Control', cacheControl);
     res.json(body);
   } catch (err) {
     next(err);

@@ -105,34 +105,45 @@ export async function downloadUpdate(
   await Native.mkdir(dir);
 
   try {
-    // 1 — Manifest
+    // 1 — Fetch manifest, appending ?from=<currentBundleHash> so the server
+    //     can include a diff URL tailored to this device's current bundle.
     log('Downloading manifest…');
-    const manifestRes = await fetch(absoluteUrl(manifestUrl!));
+    const current = await Storage.getCurrent();
+    const baseManifestUrl = absoluteUrl(manifestUrl!);
+    const manifestFetchUrl = current?.bundleHash
+      ? `${baseManifestUrl}${baseManifestUrl.includes('?') ? '&' : '?'}from=${current.bundleHash}`
+      : baseManifestUrl;
+    const manifestRes = await fetch(manifestFetchUrl);
     if (!manifestRes.ok) throw new Error(`Manifest fetch failed: ${manifestRes.status}`);
     const manifest: UpdateManifest = await manifestRes.json();
     await Native.writeFile(`${dir}/manifest.json`, JSON.stringify(manifest, null, 2));
 
-    // 2 — Bundle → temp file (native download, no JS base64 roundtrip)
-    log('Downloading bundle…');
-    const bundleUrl = absoluteUrl(manifest.bundleUrl);
-    const tmp = `${dir}/bundle.hbc.tmp`;
-    const final = `${dir}/bundle.hbc`;
-    await Native.downloadFile(bundleUrl, tmp);
+    const finalBundle = `${dir}/bundle.hbc`;
 
-    // 3 — SHA-256 verification
-    log('Verifying hash…');
-    const actual = await Native.sha256File(tmp);
-    if (actual !== bundleHash) {
-      await Native.deleteFile(dir).catch(() => {});
-      throw new Error(
-        `Integrity check failed.\n  Expected: ${bundleHash}\n  Got:      ${actual}`,
-      );
+    // 2 — Delta path: attempt if the server returned a patch applicable to
+    //     the device's current bundle.
+    const deltaApplicable =
+      !!manifest.diffUrl &&
+      !!manifest.diffHash &&
+      !!manifest.fromBundleHash &&
+      !!current?.bundlePath &&
+      current.bundleHash === manifest.fromBundleHash;
+
+    if (deltaApplicable) {
+      log('Attempting delta patch…');
+      try {
+        await applyDelta(current!.bundlePath, manifest, dir, finalBundle);
+        log('Delta patch applied successfully');
+      } catch (deltaErr) {
+        log('Delta patch failed, falling back to full download:', deltaErr);
+        await fullBundleDownload(manifest, dir, finalBundle, bundleHash!);
+      }
+    } else {
+      // 3 — Full bundle download path
+      await fullBundleDownload(manifest, dir, finalBundle, bundleHash!);
     }
 
-    // 4 — Atomic rename
-    await Native.moveFile(tmp, final);
-
-    // 5 — Download+extract the single assets zip (Android). One HTTP GET
+    // 4 — Download+extract the single assets zip (Android). One HTTP GET
     // beats hundreds of individual asset GETs. iOS manifests omit this
     // field and keep the native symlink-to-main-bundle trick.
     if (manifest.assetsZipUrl) {
@@ -154,7 +165,7 @@ export async function downloadUpdate(
 
     log('Download complete', updateId);
 
-    return { updateId, bundlePath: final, manifest };
+    return { updateId, bundlePath: finalBundle, manifest };
   } catch (err) {
     await Native.deleteFile(dir).catch(() => {});
     throw err;
@@ -247,4 +258,66 @@ export async function getCurrentVersion(): Promise<VersionInfo> {
 // ------------------------------------------------------------------
 // Helpers
 // ------------------------------------------------------------------
+
+/**
+ * Apply a binary delta patch to reconstruct the new bundle.
+ * Throws on any failure — caller falls back to full bundle download.
+ */
+async function applyDelta(
+  basePath: string,
+  manifest: UpdateManifest,
+  dir: string,
+  finalBundle: string,
+): Promise<void> {
+  const patchPath = `${dir}/bundle.patch`;
+  const tmpOut = `${finalBundle}.tmp`;
+
+  await Native.downloadFile(absoluteUrl(manifest.diffUrl!), patchPath);
+
+  const actualPatchHash = await Native.sha256File(patchPath);
+  if (actualPatchHash !== manifest.diffHash) {
+    throw new Error(
+      `Patch hash mismatch (expected ${manifest.diffHash}, got ${actualPatchHash})`,
+    );
+  }
+
+  await Native.applyPatch(basePath, patchPath, tmpOut);
+
+  const actualOut = await Native.sha256File(tmpOut);
+  if (actualOut !== manifest.bundleHash) {
+    throw new Error(
+      `Reconstructed bundle hash mismatch (expected ${manifest.bundleHash}, got ${actualOut})`,
+    );
+  }
+
+  await Native.moveFile(tmpOut, finalBundle);
+  await Native.deleteFile(patchPath).catch(() => {});
+}
+
+/**
+ * The existing full-bundle download path — extracted so the delta path
+ * can fall back to it on any failure.
+ */
+async function fullBundleDownload(
+  manifest: UpdateManifest,
+  dir: string,
+  finalBundle: string,
+  expectedHash: string,
+): Promise<void> {
+  log('Downloading bundle...');
+  const bundleUrl = absoluteUrl(manifest.bundleUrl);
+  const tmp = `${finalBundle}.tmp`;
+  await Native.downloadFile(bundleUrl, tmp);
+
+  log('Verifying hash...');
+  const actual = await Native.sha256File(tmp);
+  if (actual !== expectedHash) {
+    await Native.deleteFile(dir).catch(() => {});
+    throw new Error(
+      `Integrity check failed.\n  Expected: ${expectedHash}\n  Got:      ${actual}`,
+    );
+  }
+
+  await Native.moveFile(tmp, finalBundle);
+}
 

@@ -1,4 +1,4 @@
-const { S3Client, DeleteObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
 const config = require('../config');
 
@@ -11,6 +11,16 @@ const client = new S3Client({
   },
   forcePathStyle: config.s3.forcePathStyle,
 });
+
+async function downloadBuffer(key) {
+  const out = await client.send(new GetObjectCommand({
+    Bucket: config.s3.bucket,
+    Key: key,
+  }));
+  const chunks = [];
+  for await (const chunk of out.Body) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
 
 async function uploadBuffer(key, buffer, contentType = 'application/octet-stream') {
   const upload = new Upload({
@@ -48,4 +58,4 @@ function publicUrl(key) {
   return `${config.s3.publicBaseUrl}/${key}`;
 }
 
-module.exports = { client, uploadBuffer, deleteKey, exists, publicUrl };
+module.exports = { client, downloadBuffer, uploadBuffer, deleteKey, exists, publicUrl };

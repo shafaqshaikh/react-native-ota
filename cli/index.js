@@ -60,6 +60,7 @@ program
   .command('publish')
   .description('Build and publish an OTA update')
   .requiredOption('-p, --platform <platform>', 'ios or android')
+  .option('--project <slug>', 'Project slug (required when authenticated via session token)', rc.projectId || creds.defaultProject)
   .option('-s, --server <url>', 'OTA server URL', process.env.OTA_UPDATES_SERVER || rc.server || creds.serverUrl || 'http://localhost:4000')
   .option('-e, --entry <file>', 'Entry file', 'index.js')
   .option('--app-version <ver>', 'App version (auto-detected from package.json)')

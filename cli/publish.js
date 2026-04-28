@@ -146,6 +146,15 @@ async function publish(opts) {
     form.append('assetsZip', fs.createReadStream(assetsZipPath), { filename: 'assets.zip' });
   }
 
+  const isSessionToken = (token || '').startsWith('ota_sess_');
+  if (isSessionToken) {
+    if (!opts.project) {
+      console.error(chalk.red('\n  ✗ --project <slug> is required when authenticated via a session token (run `ota-updates login`).'));
+      process.exit(1);
+    }
+    form.append('projectSlug', opts.project);
+  }
+
   let res;
   try {
     res = await fetch(`${server}/v1/publish`, {

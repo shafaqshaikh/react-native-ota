@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const config = require('../config');
-const { ApiKey, Project } = require('../db/mongo');
+const { ApiKey, Project, Session, User } = require('../db/mongo');
+const { hashToken } = require('../utils/session');
 
 function hashKey(key) {
   return crypto.createHash('sha256').update(key).digest('hex');
@@ -58,6 +59,7 @@ function requireAdmin(req, res, next) {
     res.set('WWW-Authenticate', 'Basic realm="OTA Admin"');
     return res.status(401).send('Unauthorized');
   }
+  req.adminUser = user;
   next();
 }
 
@@ -68,4 +70,33 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-module.exports = { requireApiKey, requireAdmin, hashKey, generateKey };
+async function requireAuth(req, res, next) {
+  try {
+    const header = req.get('Authorization') || req.get('X-API-Key') || '';
+    const token = header.replace(/^Bearer\s+/i, '').trim();
+    if (!token) return res.status(401).json({ error: 'Missing credentials' });
+
+    if (token.startsWith('ota_live_')) {
+      return requireApiKey(req, res, next);
+    }
+
+    if (token.startsWith('ota_sess_')) {
+      const session = await Session.findOne({ tokenHash: hashToken(token) }).lean();
+      if (!session || session.expiresAt < new Date()) {
+        return res.status(401).json({ error: 'Invalid or expired session' });
+      }
+      const user = await User.findById(session.userId).lean();
+      if (!user) return res.status(401).json({ error: 'User not found' });
+      req.user = user;
+      req.session = session;
+      Session.updateOne({ _id: session._id }, { lastUsedAt: new Date() }).catch(() => {});
+      return next();
+    }
+
+    return res.status(401).json({ error: 'Invalid credentials' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { requireApiKey, requireAdmin, requireAuth, hashKey, generateKey };

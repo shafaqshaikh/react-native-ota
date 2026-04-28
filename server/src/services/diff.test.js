@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 describe('diff service', () => {
@@ -16,23 +17,23 @@ describe('diff service', () => {
     expect(patchBuf.length).toBeGreaterThan(0);
     expect(patchBuf.length).toBeLessThan(newBuf.length);
 
-    const tmp = `/tmp/diff-test-${Date.now()}`;
-    await fs.mkdir(tmp, { recursive: true });
-    await fs.writeFile(`${tmp}/old`, oldBuf);
-    await fs.writeFile(`${tmp}/patch`, patchBuf);
-    await new Promise((resolve, reject) => {
-      const p = spawn('bspatch', [`${tmp}/old`, `${tmp}/new-out`, `${tmp}/patch`]);
-      let stderr = '';
-      p.stderr.on('data', (d) => (stderr += d));
-      p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(stderr))));
-    });
-    const reconstructed = await fs.readFile(`${tmp}/new-out`);
-    expect(reconstructed.equals(newBuf)).toBe(true);
-    await fs.rm(tmp, { recursive: true });
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'diff-test-'));
+    try {
+      await fs.writeFile(`${tmp}/old`, oldBuf);
+      await fs.writeFile(`${tmp}/patch`, patchBuf);
+      await new Promise((resolve, reject) => {
+        const p = spawn('bspatch', [`${tmp}/old`, `${tmp}/new-out`, `${tmp}/patch`]);
+        let stderr = '';
+        p.stderr.on('data', (d) => (stderr += d));
+        p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(stderr))));
+      });
+      const reconstructed = await fs.readFile(`${tmp}/new-out`);
+      expect(reconstructed.equals(newBuf)).toBe(true);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
   });
 });
-
-const os = require('node:os');
 
 describe('diff.generate()', () => {
   const fixturesDir = path.join(__dirname, '../../../__fixtures__');
@@ -112,7 +113,9 @@ describe('diff.generate()', () => {
     };
     const fakeUpdateDiff = { create: jest.fn() };
 
-    const before = (await fs.readdir(os.tmpdir())).filter((f) => f.startsWith('bsdiff-'));
+    const before = new Set(
+      (await fs.readdir(os.tmpdir())).filter((f) => f.startsWith('bsdiff-'))
+    );
 
     const diffService = require('./diff');
     await expect(
@@ -127,6 +130,7 @@ describe('diff.generate()', () => {
     ).rejects.toThrow();
 
     const after = (await fs.readdir(os.tmpdir())).filter((f) => f.startsWith('bsdiff-'));
-    expect(after.length).toBeLessThanOrEqual(before.length);
+    const leaked = after.filter((f) => !before.has(f));
+    expect(leaked).toEqual([]);
   });
 });

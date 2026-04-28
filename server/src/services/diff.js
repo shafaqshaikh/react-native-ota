@@ -4,17 +4,30 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
+const BSDIFF_TIMEOUT_MS = 120_000;  // 2 min hard ceiling for large bundles
+
 function runCommand(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, opts);
+    const p = spawn(cmd, args, { timeout: BSDIFF_TIMEOUT_MS, killSignal: 'SIGKILL', ...opts });
     let stderr = '';
-    p.stderr.on('data', (d) => (stderr += d.toString()));
-    p.on('error', reject);
-    p.on('exit', (code) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`${cmd} exited ${code}: ${stderr.trim()}`)),
-    );
+    let settled = false;
+    const settleReject = (err) => { if (!settled) { settled = true; reject(err); } };
+    const settleResolve = () => { if (!settled) { settled = true; resolve(); } };
+
+    // Best-effort deprioritise — ignore platforms without setPriority.
+    try { os.setPriority(p.pid, 10); } catch { /* non-Linux or not supported */ }
+
+    p.stderr.on('data', (d) => {
+      if (stderr.length < 8 * 1024) stderr += d.toString();  // bounded
+    });
+    p.on('error', (err) => settleReject(err));
+    p.on('exit', (code, signal) => {
+      if (signal === 'SIGKILL') {
+        return settleReject(new Error(`${cmd} timed out after ${BSDIFF_TIMEOUT_MS}ms`));
+      }
+      if (code === 0) return settleResolve();
+      settleReject(new Error(`${cmd} exited ${code}: ${stderr.trim()}`));
+    });
   });
 }
 
@@ -27,7 +40,7 @@ async function computePatch(oldBuf, newBuf) {
   try {
     await fs.writeFile(oldPath, oldBuf);
     await fs.writeFile(newPath, newBuf);
-    await runCommand('nice', ['-n', '10', 'bsdiff', oldPath, newPath, patchPath]);
+    await runCommand('bsdiff', [oldPath, newPath, patchPath]);
     return await fs.readFile(patchPath);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });

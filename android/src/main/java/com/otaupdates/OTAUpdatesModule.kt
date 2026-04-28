@@ -16,6 +16,10 @@ class OTAUpdatesModule(private val ctx: ReactApplicationContext) :
     ReactContextBaseJavaModule(ctx) {
 
     companion object {
+        init {
+            System.loadLibrary("otaupdates")
+        }
+
         private const val TAG = "OTAUpdates"
         private const val PREFS = "OTAUpdatesPrefs"
         private const val K_BUNDLE = "bundlePath"
@@ -485,6 +489,22 @@ class OTAUpdatesModule(private val ctx: ReactApplicationContext) :
                 promise.resolve(true)
             } catch (e: Exception) {
                 promise.reject("UNZIP", e.message)
+            }
+        }.start()
+    }
+
+    // ── Delta patching ─────────────────────────────────────────────
+
+    private external fun applyPatchNative(basePath: String, patchPath: String, outputPath: String)
+
+    @ReactMethod
+    fun applyPatch(basePath: String, patchPath: String, outputPath: String, promise: Promise) {
+        Thread {
+            try {
+                applyPatchNative(basePath, patchPath, outputPath)
+                promise.resolve(true)
+            } catch (e: Throwable) {
+                promise.reject("PATCH_FAILED", e.message ?: "bspatch failed", e)
             }
         }.start()
     }

@@ -43,6 +43,14 @@ export interface UpdateManifest {
   assetsZipUrl?: string | null;
   /** SHA-256 hash of the zip for integrity verification. */
   assetsZipHash?: string | null;
+  /** Binary patch URL (delta updates). Only present if a diff exists for the device's current bundle. */
+  diffUrl?: string | null;
+  /** SHA-256 hex of the patch bytes. */
+  diffHash?: string | null;
+  /** Patch size in bytes (for logging / progress). */
+  diffSize?: number | null;
+  /** Hash of the bundle the patch applies *to*. Client must verify equality with its current bundle hash. */
+  fromBundleHash?: string | null;
   assets: AssetEntry[];
   createdAt: number;
 }

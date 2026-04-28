@@ -66,4 +66,7 @@ export const Native = {
     OTAUpdatesModule.unzipFile
       ? OTAUpdatesModule.unzipFile(zipPath, destDir)
       : Promise.reject(new Error('unzipFile not implemented on this platform')),
+
+  applyPatch: (basePath: string, patchPath: string, outputPath: string): Promise<void> =>
+    OTAUpdatesModule.applyPatch(basePath, patchPath, outputPath),
 };

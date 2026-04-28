@@ -1,7 +1,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const { Project, ApiKey, Update, AuditLog } = require('../db/mongo');
+const { Project, ApiKey, Update, AuditLog, User, Session } = require('../db/mongo');
 const { requireAdmin, generateKey, hashKey } = require('../middleware/auth');
+const passwordUtil = require('../utils/password');
 const rollout = require('../services/rollout');
 const s3 = require('../storage/s3');
 
@@ -36,7 +37,7 @@ function layout(title, body, flash = '') {
   .pill { background: #eef; padding: 1px 6px; border-radius: 10px; font-size: 11px; }
 </style>
 </head><body>
-<nav><strong>OTA Admin</strong> &nbsp; <a href="/admin">Dashboard</a> <a href="/admin/projects">Projects</a> <a href="/admin/audit">Audit log</a></nav>
+<nav><strong>OTA Admin</strong> &nbsp; <a href="/admin">Dashboard</a> <a href="/admin/projects">Projects</a> <a href="/admin/users">Users</a> <a href="/admin/audit">Audit log</a></nav>
 ${flash ? `<div class="flash">${esc(flash)}</div>` : ''}
 <h1>${esc(title)}</h1>
 ${body}
@@ -258,6 +259,98 @@ router.post('/updates/:id/delete', async (req, res, next) => {
     }).catch(() => {});
 
     res.redirect('/admin?msg=deleted');
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Users (CLI-login accounts) ───────────────────────────────────
+router.get('/users', async (req, res, next) => {
+  try {
+    const users = await User.find().sort({ createdAt: -1 }).lean();
+    const ids = users.map((u) => u._id);
+    const sessionAgg = await Session.aggregate([
+      { $match: { userId: { $in: ids }, expiresAt: { $gt: new Date() } } },
+      { $group: { _id: '$userId', count: { $sum: 1 } } },
+    ]);
+    const counts = Object.fromEntries(sessionAgg.map((s) => [String(s._id), s.count]));
+    const rows = users
+      .map(
+        (u) => `<tr>
+          <td>${esc(u.email)}</td>
+          <td>${esc(u.name || '')}</td>
+          <td>${counts[String(u._id)] || 0}</td>
+          <td>${fmtDate(u.createdAt)}</td>
+          <td>
+            <form method="post" action="/admin/users/${u._id}/delete" onsubmit="return confirm('Delete ${esc(u.email)}?');">
+              <button class="danger">Delete</button>
+            </form>
+          </td>
+        </tr>`,
+      )
+      .join('');
+    const body = `
+<h2>Create a user</h2>
+<form method="post" action="/admin/users">
+  <input name="email" placeholder="email" required>
+  <input name="password" type="password" placeholder="password (min 8)" required minlength="8">
+  <input name="name" placeholder="name (optional)">
+  <button>Create user</button>
+</form>
+<h2>All users</h2>
+<table>
+  <tr><th>Email</th><th>Name</th><th>Active sessions</th><th>Created</th><th></th></tr>
+  ${rows || '<tr><td colspan="5">No users yet.</td></tr>'}
+</table>`;
+    res.send(layout('Users', body, req.query.msg || ''));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/users', async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase().trim();
+    const password = String(req.body.password || '');
+    const name = String(req.body.name || '').trim();
+    if (!email || !password) {
+      return res.redirect('/admin/users?msg=email+and+password+required');
+    }
+    if (password.length < 8) {
+      return res.redirect('/admin/users?msg=password+must+be+at+least+8+characters');
+    }
+    const existing = await User.findOne({ email }).lean();
+    if (existing) {
+      return res.redirect('/admin/users?msg=email+already+exists');
+    }
+    const passwordHash = await passwordUtil.hash(password);
+    const user = await User.create({ email, passwordHash, name });
+    AuditLog.create({
+      type: 'user_created',
+      actor: req.adminUser || 'admin',
+      payload: { userId: user._id.toString(), email },
+    }).catch(() => {});
+    res.redirect('/admin/users?msg=user+created');
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.redirect('/admin/users?msg=email+already+exists');
+    }
+    next(err);
+  }
+});
+
+router.post('/users/:id/delete', async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id).lean();
+    if (!user) return res.redirect('/admin/users?msg=user+not+found');
+    await Session.deleteMany({ userId: user._id });
+    await User.deleteOne({ _id: user._id });
+    AuditLog.create({
+      type: 'user_deleted',
+      actor: req.adminUser || 'admin',
+      payload: { userId: user._id.toString(), email: user.email },
+    }).catch(() => {});
+    res.redirect('/admin/users?msg=user+deleted');
   } catch (err) {
     next(err);
   }

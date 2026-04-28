@@ -141,6 +141,16 @@ npx ota-updates publish -p android --app-version 1.4.9 --channel staging --label
 
 ---
 
+## Delta updates
+
+When the server publishes a new bundle, it generates a binary patch (`bsdiff`) against the previous active bundle. The SDK detects this and downloads the patch instead of the full bundle, reducing payload size by 85–95% in the common case.
+
+The behavior is fully automatic — no API changes for consumer apps. If a delta is unavailable (first install, missing precomputed diff, or any failure during patch download/application), the SDK silently falls back to the full bundle download. Verification is byte-for-byte: the reconstructed bundle's SHA-256 must match the canonical hash from the manifest, otherwise the patched output is discarded and the full bundle is fetched.
+
+For self-hosted deployments, ensure the server's runtime image includes `bsdiff` (already in the published Docker image; for custom builds, `apk add bsdiff` on Alpine).
+
+---
+
 ## Self-host the server
 
 See **[SELF_HOSTING.md](SELF_HOSTING.md)** for the full walkthrough. Quick start with Docker:

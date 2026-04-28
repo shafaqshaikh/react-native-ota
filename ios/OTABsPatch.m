@@ -15,7 +15,8 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
     int bzerror = BZ_OK;
     int n = BZ2_bzRead(&bzerror, s->bz, buffer, length);
     if (bzerror != BZ_OK && bzerror != BZ_STREAM_END) return -1;
-    return n;
+    if (n != length) return -1;
+    return 0;
 }
 
 @implementation OTABsPatch
@@ -38,8 +39,8 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
         return NO;
     }
 
-    uint8_t header[32];
-    if (fread(header, 1, 32, pf) != 32) {
+    uint8_t header[24];
+    if (fread(header, 1, 24, pf) != 24) {
         fclose(pf);
         if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:3
             userInfo:@{NSLocalizedDescriptionKey: @"Short patch header"}];
@@ -53,7 +54,7 @@ static int bz_read(const struct bspatch_stream* stream, void* buffer, int length
     }
 
     int64_t newsize = 0;
-    for (int i = 0; i < 8; i++) newsize |= ((int64_t)header[24 + i]) << (i * 8);
+    for (int i = 0; i < 8; i++) newsize |= ((int64_t)header[16 + i]) << (i * 8);
     if (newsize < 0) {
         fclose(pf);
         if (error) *error = [NSError errorWithDomain:@"OTABsPatch" code:5

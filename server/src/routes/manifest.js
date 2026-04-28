@@ -1,14 +1,12 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const { Update } = require('../db/mongo');
+const { Update, UpdateDiff } = require('../db/mongo');
 const s3 = require('../storage/s3');
 
 const router = express.Router();
 
-// Per-worker cache of manifest responses. Responses are immutable per
-// updateId once published (rollback sets status=deleted, which 60s TTL
-// bounds exposure for). Combined with the Cache-Control header below,
-// this keeps manifest origin traffic near zero during stampedes.
+// Per-worker cache of manifest responses. Keyed by id|fromHash because
+// different `from=` values produce different bodies.
 const MANIFEST_CACHE_TTL_MS = 60_000;
 const MANIFEST_CACHE_MAX_ENTRIES = 1000;
 const manifestCache = new Map();
@@ -37,10 +35,18 @@ router.get('/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid update id' });
     }
 
+    const fromHash = typeof req.query.from === 'string' ? req.query.from : null;
+    const cacheKey = `${id}|${fromHash || 'none'}`;
+
     const now = Date.now();
-    const cached = manifestCache.get(id);
+    const cached = manifestCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
-      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
+      // Only the no-diff path is CDN-cacheable; ?from= varies per device.
+      if (!fromHash) {
+        res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
+      } else {
+        res.setHeader('Cache-Control', 'private, no-store');
+      }
       return res.json(cached.body);
     }
 
@@ -50,9 +56,33 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const body = buildPayload(update);
+
+    if (fromHash) {
+      try {
+        const diff = await UpdateDiff.findOne({
+          toUpdateId: id,
+          fromBundleHash: fromHash,
+        }).lean();
+        if (diff) {
+          body.diffUrl = s3.publicUrl(diff.patchKey);
+          body.diffHash = diff.patchHash;
+          body.diffSize = diff.patchSize;
+          body.fromBundleHash = diff.fromBundleHash;
+        }
+      } catch (err) {
+        // Diff lookup error is non-fatal — fall back to full manifest.
+        console.error('[OTA] UpdateDiff lookup failed:', err.message);
+      }
+    }
+
     if (manifestCache.size >= MANIFEST_CACHE_MAX_ENTRIES) manifestCache.clear();
-    manifestCache.set(id, { body, expiresAt: now + MANIFEST_CACHE_TTL_MS });
-    res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
+    manifestCache.set(cacheKey, { body, expiresAt: now + MANIFEST_CACHE_TTL_MS });
+
+    if (!fromHash) {
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
+    } else {
+      res.setHeader('Cache-Control', 'private, no-store');
+    }
     res.json(body);
   } catch (err) {
     next(err);

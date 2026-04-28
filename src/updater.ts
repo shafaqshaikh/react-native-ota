@@ -111,7 +111,7 @@ export async function downloadUpdate(
     const current = await Storage.getCurrent();
     const baseManifestUrl = absoluteUrl(manifestUrl!);
     const manifestFetchUrl = current?.bundleHash
-      ? `${baseManifestUrl}${baseManifestUrl.includes('?') ? '&' : '?'}from=${current.bundleHash}`
+      ? `${baseManifestUrl}${baseManifestUrl.includes('?') ? '&' : '?'}from=${encodeURIComponent(current.bundleHash)}`
       : baseManifestUrl;
     const manifestRes = await fetch(manifestFetchUrl);
     if (!manifestRes.ok) throw new Error(`Manifest fetch failed: ${manifestRes.status}`);

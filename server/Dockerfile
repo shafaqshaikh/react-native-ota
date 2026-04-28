@@ -5,7 +5,16 @@ RUN npm install --production --no-audit --no-fund
 
 FROM node:20-alpine
 WORKDIR /app
-RUN apk add --no-cache bsdiff
+# mendsley/bsdiff produces the ENDSLEY/BSDIFF43 format that our client-side
+# bspatch parses. Alpine ships only Colin Percival's bsdiff (BSDIFF40, in
+# edge/testing) — incompatible. Compile from source.
+RUN apk add --no-cache bzip2 \
+ && apk add --no-cache --virtual .bsdiff-build build-base bzip2-dev wget \
+ && wget -qO /tmp/bsdiff.c https://raw.githubusercontent.com/mendsley/bsdiff/master/bsdiff.c \
+ && wget -qO /tmp/bsdiff.h https://raw.githubusercontent.com/mendsley/bsdiff/master/bsdiff.h \
+ && cc -O2 -DBSDIFF_EXECUTABLE -I/tmp -o /usr/local/bin/bsdiff /tmp/bsdiff.c -lbz2 \
+ && rm /tmp/bsdiff.c /tmp/bsdiff.h \
+ && apk del .bsdiff-build
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./

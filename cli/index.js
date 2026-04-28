@@ -48,6 +48,8 @@ function loadConfig() {
 }
 
 const rc = loadConfig();
+const credentials = require('./credentials');
+const creds = credentials.read() || {};
 
 program
   .name('ota-updates')
@@ -58,7 +60,7 @@ program
   .command('publish')
   .description('Build and publish an OTA update')
   .requiredOption('-p, --platform <platform>', 'ios or android')
-  .option('-s, --server <url>', 'OTA server URL', process.env.OTA_UPDATES_SERVER || rc.server || 'http://localhost:4000')
+  .option('-s, --server <url>', 'OTA server URL', process.env.OTA_UPDATES_SERVER || rc.server || creds.serverUrl || 'http://localhost:4000')
   .option('-e, --entry <file>', 'Entry file', 'index.js')
   .option('--app-version <ver>', 'App version (auto-detected from package.json)')
   .option('--runtime-version <ver>', 'Runtime version (defaults to app version)')
@@ -66,7 +68,7 @@ program
   .option('--label <label>', 'Human-readable label, e.g. "v1.4.9-hotfix-3"')
   .option('--rollout <pct>', 'Rollout ceiling 1-100', '100')
   .option('--rollout-schedule <json>', 'Staged rollout JSON, e.g. \'[{"atMinutes":0,"pct":5},{"atMinutes":60,"pct":50},{"atMinutes":240,"pct":100}]\'')
-  .option('--token <apikey>', 'API key', process.env.OTA_UPDATES_TOKEN || rc.token)
+  .option('--token <apikey>', 'API key or session token', process.env.OTA_UPDATES_TOKEN || rc.token || creds.token)
   .option('--output <dir>', 'Temp output directory', '/tmp/ota-build')
   .action(publish);
 
@@ -74,8 +76,8 @@ program
   .command('check')
   .description('Check server for available updates')
   .requiredOption('-p, --platform <platform>', 'ios or android')
-  .option('--project <slug>', 'Project slug', rc.projectId)
-  .option('-s, --server <url>', 'OTA server URL', process.env.OTA_UPDATES_SERVER || rc.server || 'http://localhost:4000')
+  .option('--project <slug>', 'Project slug', rc.projectId || creds.defaultProject)
+  .option('-s, --server <url>', 'OTA server URL', process.env.OTA_UPDATES_SERVER || rc.server || creds.serverUrl || 'http://localhost:4000')
   .option('--app-version <ver>', 'App version')
   .option('--runtime-version <ver>', 'Runtime version')
   .option('--channel <name>', 'Release channel', process.env.OTA_UPDATES_CHANNEL || rc.channel || 'production')
@@ -97,7 +99,7 @@ program
 program
   .command('list')
   .description('List all published updates')
-  .option('-s, --server <url>', 'OTA server URL', 'http://localhost:4000')
+  .option('-s, --server <url>', 'OTA server URL', process.env.OTA_UPDATES_SERVER || rc.server || creds.serverUrl || 'http://localhost:4000')
   .action(async (opts) => {
     const fetch = require('node-fetch');
     const res = await fetch(`${opts.server}/updates`);
